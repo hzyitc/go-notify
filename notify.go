@@ -1,25 +1,30 @@
 package notify
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+	"unsafe"
+)
 
 type Notify struct {
-	c atomic.Value
+	v unsafe.Pointer
 }
 
 // Return a chan which will be closed when calling `n.NotifyAll()`
 func (n *Notify) Wait() <-chan interface{} {
-	c := n.c.Load()
-	if c == nil {
-		n.c.CompareAndSwap(nil, make(chan interface{}))
-		c = n.c.Load()
+	v := atomic.LoadPointer(&n.v)
+	if v == nil {
+		ch := make(chan interface{})
+		atomic.CompareAndSwapPointer(&n.v, nil, unsafe.Pointer(&ch))
+		v = atomic.LoadPointer(&n.v)
 	}
-	return c.(chan interface{})
+	return *(*chan interface{})(v)
 }
 
 // Notify all waiting goroutines
 func (n *Notify) NotifyAll() {
-	old := n.c.Swap(make(chan interface{}))
+	ch := make(chan interface{})
+	old := atomic.SwapPointer(&n.v, unsafe.Pointer(&ch))
 	if old != nil {
-		close(old.(chan interface{}))
+		close(*(*chan interface{})(old))
 	}
 }
